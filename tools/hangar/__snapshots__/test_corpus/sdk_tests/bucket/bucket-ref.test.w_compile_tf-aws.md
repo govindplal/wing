@@ -319,6 +319,9 @@
         },
         "function_name": "Handler-c85d8af5",
         "handler": "index.handler",
+        "logging_config": {
+          "log_format": "JSON"
+        },
         "memory_size": 1024,
         "publish": true,
         "role": "${aws_iam_role.BucketRef_AwsConsoleField_Handler_IamRole_BF718408.arn}",
@@ -351,6 +354,9 @@
         },
         "function_name": "Handler-c85e098f",
         "handler": "index.handler",
+        "logging_config": {
+          "log_format": "JSON"
+        },
         "memory_size": 1024,
         "publish": true,
         "role": "${aws_iam_role.BucketRef_BucketArnField_Handler_IamRole_DF52E4B1.arn}",
@@ -383,6 +389,9 @@
         },
         "function_name": "Handler-c885f795",
         "handler": "index.handler",
+        "logging_config": {
+          "log_format": "JSON"
+        },
         "memory_size": 1024,
         "publish": true,
         "role": "${aws_iam_role.BucketRef_BucketNameField_Handler_IamRole_4C746299.arn}",
