@@ -543,6 +543,10 @@ pub struct StructField {
 
 #[derive(Debug)]
 pub enum ExprKind {
+	Intrinsic {
+		name: Symbol,
+		arg_list: Option<ArgList>,
+	},
 	New(New),
 	Literal(Literal),
 	Range {

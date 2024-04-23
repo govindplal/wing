@@ -19,6 +19,7 @@ use crate::{
 	comp_ctx::{CompilationContext, CompilationPhase},
 	dbg_panic,
 	diagnostic::{report_diagnostic, Diagnostic, WingSpan},
+	dtsify::extern_dtsify::ExternDTSifier,
 	file_graph::FileGraph,
 	files::Files,
 	parser::is_entrypoint_file,
@@ -27,7 +28,7 @@ use crate::{
 		lifts::{LiftQualification, Liftable, Lifts},
 		resolve_super_method, resolve_user_defined_type,
 		symbol_env::{SymbolEnv, SymbolEnvKind},
-		ClassLike, Type, TypeRef, Types, CLASS_INFLIGHT_INIT_NAME,
+		ClassLike, IntrinsicKind, Type, TypeRef, Types, CLASS_INFLIGHT_INIT_NAME,
 	},
 	visit_context::{VisitContext, VisitorWithContext},
 	MACRO_REPLACE_ARGS, MACRO_REPLACE_ARGS_TEXT, MACRO_REPLACE_SELF, WINGSDK_ASSEMBLY_NAME, WINGSDK_AUTOID_RESOURCE,
@@ -485,6 +486,103 @@ impl<'a> JSifier<'a> {
 			_ => "",
 		};
 		match &expression.kind {
+			ExprKind::Intrinsic { arg_list, .. } => {
+				let dd = self
+					.types
+					.intrinsics
+					.iter()
+					.find(|x| x.expression_id == expression.id)
+					.unwrap();
+				let IntrinsicKind::Inflight { path } = &dd.kind;
+				let mut export_name = "default";
+				let mut lift_string = new_code!(expr_span, "$stdlib.core.lift({");
+
+				let mut lifts: IndexMap<String, (&Expr, Option<&Vec<Expr>>)> = IndexMap::new();
+				if let Some(arg_list) = arg_list {
+					for x in &arg_list.named_args {
+						if x.0.name == "export" {
+							if let ExprKind::Literal(Literal::String(s)) = &x.1.kind {
+								export_name = &s[1..s.len() - 1];
+							}
+						} else if x.0.name == "lifts" {
+							if let ExprKind::JsonLiteral { element, .. } = &x.1.kind {
+								if let ExprKind::JsonMapLiteral { fields } = &element.kind {
+									for field in fields {
+										let alias = field.0.name.clone();
+										if let ExprKind::JsonLiteral { element, .. } = &field.1.kind {
+											if let ExprKind::JsonMapLiteral { fields } = &element.kind {
+												let eee = if let Some(ll) = fields.get("lift") {
+													ll
+												} else {
+													continue;
+												};
+												let ops = if let Some(ll) = fields.get("ops") {
+													if let ExprKind::ArrayLiteral { items, .. } = &ll.kind {
+														Some(items)
+													} else {
+														None
+													}
+												} else {
+													None
+												};
+												lifts.insert(alias, (eee, ops));
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				let mut dts = ExternDTSifier::new(self.types);
+				let function_type = self.types.get_expr_type(expression);
+				let function_type = self.types.maybe_unwrap_inference(function_type);
+				let shim = dts.dtsify_inflight(&function_type, &lifts);
+				let shim_path = path.with_extension("inflight.ts");
+				self
+					.output_files
+					.borrow_mut()
+					.add_file(&shim_path, shim.to_string())
+					.unwrap();
+
+				for lifted in lifts.iter() {
+					lift_string.append(format!(
+						"{}: {},",
+						lifted.0,
+						self.jsify_expression(&lifted.1 .0, ctx).to_string()
+					));
+				}
+
+				lift_string.append("})");
+
+				lift_string.append(".grant({");
+
+				for lifted in lifts.iter().filter(|x| x.1 .1.is_some()) {
+					lift_string.append(format!(
+						"{}: [{}],",
+						lifted.0,
+						lifted
+							.1
+							 .1
+							.unwrap()
+							.iter()
+							.map(|x| self.jsify_expression(x, ctx).to_string())
+							.join(",")
+					));
+				}
+
+				lift_string.append("})");
+
+				let require_path = self.get_require_path(path, expr_span);
+				if let Some(require_path) = require_path {
+					lift_string.append(format!(
+						".inflight(\"async (ctx, ...args) => require('{require_path}')['{export_name}'](ctx, ...args)\")"
+					));
+				}
+
+				return lift_string;
+			}
 			ExprKind::New(new) => {
 				let New {
 					class,
@@ -1423,79 +1521,25 @@ impl<'a> JSifier<'a> {
 				)
 			}
 			FunctionBody::External(extern_path) => {
-				let entrypoint_is_file = self.compilation_init_path.is_file();
-				let entrypoint_dir = if entrypoint_is_file {
-					self.compilation_init_path.parent().unwrap()
-				} else {
-					self.compilation_init_path
-				};
-
-				if !entrypoint_is_file {
-					// We are possibly compiling a package, so we need to make sure all externs
-					// are actually contained in this directory to make sure it gets packaged
-
-					if !extern_path.starts_with(entrypoint_dir) {
-						report_diagnostic(Diagnostic {
-							message: format!("{extern_path} must be a sub directory of {entrypoint_dir}"),
-							annotations: vec![],
-							hints: vec![],
-							span: Some(func_def.span.clone()),
-						});
-						return CodeMaker::default();
-					}
-				}
-
-				let rel_path = make_relative_path(entrypoint_dir.as_str(), extern_path.as_str());
-				let rel_path = Utf8PathBuf::from(rel_path);
-
-				let mut path_components = rel_path.components();
-
 				// check if the first part of the path is the node module directory
-				let require_path =
-					if path_components.next().expect("extern path must not be empty").as_str() == NODE_MODULES_DIR {
-						// We are loading an extern from a node module, so we want that path to be relative to the package itself
-						// e.g. require("../node_modules/@winglibs/blah/util.js") should be require("@winglibs/blah/util.js") instead
+				let require_path = self.get_require_path(extern_path, &func_def.span);
 
-						// the second part of the path will either be the package name or the package scope
-						let second_component = path_components
-							.next()
-							.expect("extern path in node module must have at least two components")
-							.as_str();
-
-						let module_name = if second_component.starts_with(NODE_MODULES_SCOPE_SPECIFIER) {
-							// scoped package, prepend the scope to the next part of the path
-							format!(
-								"{second_component}/{}",
-								path_components
-									.next()
-									.expect("extern path in scoped node module must have at least three components")
-							)
-						} else {
-							// regular package
-							second_component.to_string()
-						};
-
-						// combine the module name with the rest of the iterator to get the full import path
-						format!("{module_name}/{}", path_components.join("/"))
+				if let Some(require_path) = require_path {
+					let require = if ctx.visit_ctx.current_phase() == Phase::Inflight {
+						"require"
 					} else {
-						// go from the out_dir to the entrypoint dir
-						let up_dirs = "../".repeat(self.out_dir.components().count() - entrypoint_dir.components().count());
-
-						format!("{up_dirs}{rel_path}")
+						EXTERN_VAR
 					};
 
-				let require = if ctx.visit_ctx.current_phase() == Phase::Inflight {
-					"require"
+					new_code!(
+						&func_def.span,
+						format!("return ({require}(\"{require_path}\")[\"{name}\"])("),
+						parameters.clone(),
+						")"
+					)
 				} else {
-					EXTERN_VAR
-				};
-
-				new_code!(
-					&func_def.span,
-					format!("return ({require}(\"{require_path}\")[\"{name}\"])("),
-					parameters.clone(),
-					")"
-				)
+					CodeMaker::default()
+				}
 			}
 		};
 		let mut prefix = vec![];
@@ -1528,6 +1572,69 @@ impl<'a> JSifier<'a> {
 		} else {
 			code
 		}
+	}
+
+	fn get_require_path(&self, absolute_target: &Utf8PathBuf, span: &WingSpan) -> Option<String> {
+		let entrypoint_is_file = self.compilation_init_path.is_file();
+		let entrypoint_dir = if entrypoint_is_file {
+			self.compilation_init_path.parent().unwrap()
+		} else {
+			self.compilation_init_path
+		};
+
+		if !entrypoint_is_file {
+			// We are possibly compiling a package, so we need to make sure all externs
+			// are actually contained in this directory to make sure it gets packaged
+
+			if !absolute_target.starts_with(entrypoint_dir) {
+				report_diagnostic(Diagnostic {
+					message: format!("{absolute_target} must be a sub directory of {entrypoint_dir}"),
+					annotations: vec![],
+					hints: vec![],
+					span: Some(span.clone()),
+				});
+				return None;
+			}
+		}
+
+		let rel_path = make_relative_path(entrypoint_dir.as_str(), absolute_target.as_str());
+		let rel_path = Utf8PathBuf::from(rel_path);
+
+		let mut path_components = rel_path.components();
+
+		// check if the first part of the path is the node module directory
+		let path = if path_components.next().expect("extern path must not be empty").as_str() == NODE_MODULES_DIR {
+			// We are loading an extern from a node module, so we want that path to be relative to the package itself
+			// e.g. require("../node_modules/@winglibs/blah/util.js") should be require("@winglibs/blah/util.js") instead
+
+			// the second part of the path will either be the package name or the package scope
+			let second_component = path_components
+				.next()
+				.expect("extern path in node module must have at least two components")
+				.as_str();
+
+			let module_name = if second_component.starts_with(NODE_MODULES_SCOPE_SPECIFIER) {
+				// scoped package, prepend the scope to the next part of the path
+				format!(
+					"{second_component}/{}",
+					path_components
+						.next()
+						.expect("extern path in scoped node module must have at least three components")
+				)
+			} else {
+				// regular package
+				second_component.to_string()
+			};
+
+			// combine the module name with the rest of the iterator to get the full import path
+			format!("{module_name}/{}", path_components.join("/"))
+		} else {
+			// go from the out_dir to the entrypoint dir
+			let up_dirs = "../".repeat(self.out_dir.components().count() - entrypoint_dir.components().count());
+
+			format!("{up_dirs}{rel_path}")
+		};
+		Some(path)
 	}
 
 	fn jsify_class(&self, env: &SymbolEnv, class: &AstClass, ctx: &mut JSifyContext) -> CodeMaker {

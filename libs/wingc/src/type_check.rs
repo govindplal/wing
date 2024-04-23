@@ -20,6 +20,7 @@ use crate::comp_ctx::{CompilationContext, CompilationPhase};
 use crate::diagnostic::{report_diagnostic, Diagnostic, DiagnosticAnnotation, TypeError, WingSpan};
 use crate::docs::Docs;
 use crate::file_graph::FileGraph;
+use crate::parser::normalize_path;
 use crate::type_check::has_type_stmt::HasStatementVisitor;
 use crate::type_check::symbol_env::SymbolEnvKind;
 use crate::visit_context::{VisitContext, VisitorWithContext};
@@ -50,6 +51,22 @@ use self::inference_visitor::{InferenceCounterVisitor, InferenceVisitor};
 use self::jsii_importer::JsiiImportSpec;
 use self::lifts::Lifts;
 use self::symbol_env::{LookupResult, LookupResultMut, SymbolEnvIter, SymbolEnvRef};
+
+#[derive(Debug)]
+pub struct Intrinsic {
+	pub name: Symbol,
+	pub expression_id: ExprId,
+	pub statement_id: StatementIdx,
+	pub kind: IntrinsicKind,
+}
+
+#[derive(Debug)]
+pub enum IntrinsicKind {
+	Inflight {
+		path: Utf8PathBuf,
+		// lifts: IndexMap<String, (Expr, Vec<String>)>,
+	},
+}
 
 pub struct UnsafeRef<T>(*const T);
 
@@ -1351,6 +1368,7 @@ pub struct Types {
 	/// Expressions used in references that actually refer to a type.
 	/// Key is the ExprId of the object of a InstanceMember, and the value is a TypeMember representing the whole reference.
 	type_expressions: IndexMap<ExprId, Reference>,
+	pub intrinsics: Vec<Intrinsic>,
 }
 
 impl Types {
@@ -1400,6 +1418,7 @@ impl Types {
 			scope_envs: Vec::new(),
 			inferences: Vec::new(),
 			type_expressions: IndexMap::new(),
+			intrinsics: Vec::new(),
 		}
 	}
 
@@ -2102,6 +2121,40 @@ impl<'a> TypeChecker<'a> {
 
 		let (mut t, phase) = |exp: &Expr, env: &mut SymbolEnv| -> (TypeRef, Phase) {
 			match &exp.kind {
+				ExprKind::Intrinsic { name, arg_list } => {
+					match name.name.as_str() {
+						"inflight" => {
+							let method_type = self.types.make_inference();
+							if let Some(arg_list) = arg_list {
+								self.type_check_arg_list(arg_list, env);
+
+								if let ExprKind::Literal(Literal::String(ss)) = &arg_list.pos_args[0].kind {
+									// trim off the first and last character (the quotes)
+									let ss = &ss[1..ss.len() - 1];
+									let extern_path = Utf8Path::new(&ss);
+
+									let extern_path = normalize_path(extern_path, Some(&self.source_path));
+									if !extern_path.exists() {
+										self.spanned_error(exp, format!("Extern file '{}' does not exist", extern_path));
+									}
+
+									self.types.intrinsics.push(Intrinsic {
+										name: name.clone(),
+										expression_id: exp.id,
+										statement_id: StatementIdx::Index(self.ctx.current_stmt_idx()),
+										kind: IntrinsicKind::Inflight { path: extern_path },
+									});
+								}
+							}
+
+							(method_type, self.ctx.current_phase())
+						}
+						_ => {
+							self.spanned_error(exp, format!("Unknown intrinsic '{}'", name));
+							(self.types.error(), Phase::Independent)
+						}
+					}
+				}
 				ExprKind::Literal(lit) => match lit {
 					Literal::String(_) => (self.types.string(), Phase::Independent),
 					Literal::Nil => (self.types.nil(), Phase::Independent),

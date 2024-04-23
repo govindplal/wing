@@ -310,6 +310,12 @@ where
 	V: Visit<'ast> + ?Sized,
 {
 	match &node.kind {
+		ExprKind::Intrinsic { name, arg_list } => {
+			v.visit_symbol(name);
+			if let Some(arg_list) = arg_list {
+				v.visit_args(arg_list);
+			}
+		}
 		ExprKind::New(new_expr) => {
 			v.visit_new_expr(new_expr);
 		}

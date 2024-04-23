@@ -349,8 +349,11 @@ module.exports = grammar({
         $.struct_literal,
         $.optional_test,
         $.compiler_dbg_panic,
-        $.optional_unwrap
+        $.optional_unwrap,
+        $.intrinsic
       ),
+
+    intrinsic: ($) => prec.right(seq("@", field("name", $.identifier), field("args", optional($.argument_list)))),
 
     // Primitives
     _literal: ($) =>
