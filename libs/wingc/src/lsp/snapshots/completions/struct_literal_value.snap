@@ -13,7 +13,7 @@ source: libs/wingc/src/lsp/completions.rs
   detail: "preflight (file: str, options: ImportInflightOptions): any"
   documentation:
     kind: markdown
-    value: "```wing\nimportInflight: preflight (file: str, options: ImportInflightOptions): any\n```\n---\nExplicitly apply qualifications to a preflight object used in the current method/function\n### Parameters\n- `file` — `str` — Path to extern file to create inflight. Relative to the current wing file.\n- `...options` — `ImportInflightOptions` — \n\t\t\t\t\t\t\tTODO\n\t\t\t\t\t\t\t\n  \n  - `export?` — `str?` — Name of exported function.\n  - `lifts?` — `Map<LiftDeclaration>?`"
+    value: "```wing\nimportInflight: preflight (file: str, options: ImportInflightOptions): any\n```\n---\nExplicitly apply qualifications to a preflight object used in the current method/function\n### Parameters\n- `file` — `str` — Path to extern file to create inflight. Relative to the current wing file.\n- `...options` — `ImportInflightOptions` — \n\t\t\t\t\t\t\tTODO\n\t\t\t\t\t\t\t\n  \n  - `export?` — `str?` — Name of exported function.\n  - `lifts?` — `Map<LiftDeclaration>?` — Mapping of available symbols to a lift declaration."
   sortText: cc|importInflight
   insertText: importInflight($1)
   insertTextFormat: 2
