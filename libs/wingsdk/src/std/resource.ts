@@ -264,7 +264,7 @@ export interface ImportInflightOptions {
    * */
   readonly export?: string;
   /**
-   *
+   * Mapping of available symbols to a lift declaration
    * @default * All possible operations will be available
    */
   readonly lifts?: Record<string, LiftDeclaration>;

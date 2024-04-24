@@ -309,7 +309,7 @@ class $Root extends $stdlib.std.Resource {
     const counter = this.node.root.new("@winglang/sdk.cloud.Counter", cloud.Counter, this, "Counter");
     const example = new Example(this, "Example");
     const queue = this.node.root.new("@winglang/sdk.cloud.Queue", cloud.Queue, this, "Queue");
-    (queue.setConsumer($stdlib.core.lift({example: example,}).grant({example: ["getMessage","done"],}).inflight("async (ctx, ...args) => require('../../../inline_typescript.ts')['default'](ctx, ...args)")));
+    (queue.setConsumer($stdlib.core.importInflight("async (ctx, ...args) => require('../../../inline_typescript.ts')['default'](ctx, ...args)", ({"example": ({"lift": example, "ops": ["getMessage", "done"]})}))));
     this.node.root.new("@winglang/sdk.std.Test", std.Test, this, "test:x", new $Closure1(this, "$Closure1"));
   }
 }

@@ -15,6 +15,18 @@ source: libs/wingc/src/lsp/completions.rs
     kind: markdown
     value: "```wing\npreflight x: num\n```"
   sortText: bb|x
+- label: importInflight
+  kind: 3
+  detail: "preflight (file: str, options: ImportInflightOptions): any"
+  documentation:
+    kind: markdown
+    value: "```wing\nimportInflight: preflight (file: str, options: ImportInflightOptions): any\n```\n---\nExplicitly apply qualifications to a preflight object used in the current method/function\n### Parameters\n- `file` — `str` — Path to extern file to create inflight. Relative to the current wing file.\n- `...options` — `ImportInflightOptions` — \n\t\t\t\t\t\t\tTODO\n\t\t\t\t\t\t\t\n  \n  - `export?` — `str?` — Name of exported function.\n  - `lifts?` — `Map<LiftDeclaration>?`"
+  sortText: cc|importInflight
+  insertText: importInflight($1)
+  insertTextFormat: 2
+  command:
+    title: triggerParameterHints
+    command: editor.action.triggerParameterHints
 - label: nodeof
   kind: 3
   detail: "preflight (construct: IConstruct): Node"
