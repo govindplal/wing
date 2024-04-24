@@ -702,7 +702,6 @@ impl<'a> JSifier<'a> {
 							};
 
 							let mut export_name = "default";
-							let mut lift_string = new_code!(expr_span, "$stdlib.core.lift({");
 
 							let mut lifts: IndexMap<String, (&Expr, Option<&Vec<Expr>>)> = IndexMap::new();
 							for x in &arg_list.named_args {
@@ -751,40 +750,21 @@ impl<'a> JSifier<'a> {
 								.add_file(&shim_path, shim.to_string())
 								.unwrap();
 
-							for lifted in lifts.iter() {
-								lift_string.append(format!(
-									"{}: {},",
-									lifted.0,
-									self.jsify_expression(&lifted.1 .0, ctx).to_string()
-								));
-							}
-
-							lift_string.append("})");
-
-							lift_string.append(".grant({");
-
-							for lifted in lifts.iter().filter(|x| x.1 .1.is_some()) {
-								lift_string.append(format!(
-									"{}: [{}],",
-									lifted.0,
-									lifted
-										.1
-										 .1
-										.unwrap()
-										.iter()
-										.map(|x| self.jsify_expression(x, ctx).to_string())
-										.join(",")
-								));
-							}
-
-							lift_string.append("})");
+							let mut lift_string = new_code!(expr_span, "$stdlib.core.importInflight(");
 
 							let require_path = self.get_require_path(&path, expr_span);
 							if let Some(require_path) = require_path {
 								lift_string.append(format!(
-									".inflight(\"async (ctx, ...args) => require('{require_path}')['{export_name}'](ctx, ...args)\")"
+									"\"async (ctx, ...args) => require('{require_path}')['{export_name}'](ctx, ...args)\""
 								));
 							}
+
+							if let Some(arg) = arg_list.named_args.get("lifts") {
+								lift_string.append(", ");
+								lift_string.append(self.jsify_expression(arg, ctx))
+							}
+
+							lift_string.append(")");
 
 							return lift_string;
 						}

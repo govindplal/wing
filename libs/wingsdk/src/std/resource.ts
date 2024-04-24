@@ -247,19 +247,25 @@ export interface OperationAnnotation {
 }
 
 /**
- * Mapping of names to values that should be lifted into inflight.
+ * A value and its associated operations to lift
  */
 export interface LiftDeclaration {
-  /** Hi */
+  /** A liftable value */
   readonly lift: any;
-  /** Hi  */
+  /** Operations on the given value to make available inflight  */
   readonly ops?: string[];
 }
 
-/** Hi */
+/** Options for the importInflight built-in */
 export interface ImportInflightOptions {
-  /** Hi */
-  readonly export: string;
-  /** Hi */
-  readonly lifts: Record<string, LiftDeclaration>;
+  /**
+   * Name of exported function
+   * @default "default"
+   * */
+  readonly export?: string;
+  /**
+   *
+   * @default * All possible operations will be available
+   */
+  readonly lifts?: Record<string, LiftDeclaration>;
 }

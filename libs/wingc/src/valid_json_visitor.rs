@@ -1,7 +1,7 @@
 use crate::{
 	ast::{Expr, ExprKind, Scope},
 	diagnostic::{report_diagnostic, Diagnostic},
-	type_check::{JsonData, JsonDataKind, Type, Types},
+	type_check::{is_intrinsic, JsonData, JsonDataKind, Type, Types},
 	visit::{self, Visit},
 };
 
@@ -26,6 +26,9 @@ impl<'a> ValidJsonVisitor<'a> {
 
 impl<'a> Visit<'_> for ValidJsonVisitor<'a> {
 	fn visit_expr(&mut self, expr: &Expr) {
+		if is_intrinsic(expr).is_some() {
+			return;
+		}
 		if let Some(t) = self.types.try_get_expr_type(expr.id) {
 			// if the type is json with known values, then we may need to validate that the values are legal json values
 			if let Type::Json(Some(JsonData { kind, expression_id })) = &*t {

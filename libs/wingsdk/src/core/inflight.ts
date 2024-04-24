@@ -109,23 +109,25 @@ export function inflight<TFunction extends AsyncFunction>(
 
 export function importInflight(
   inflightText: string,
-  options: ImportInflightOptions
+  lifts: ImportInflightOptions["lifts"]
 ) {
   const newLifts: Record<string, any> = {};
   const newGrants: Record<string, string[]> = {};
 
   // convert the lifts to the correct format for the Lifter
-  for (const [name, value] of Object.entries(options.lifts)) {
+  for (const [name, value] of Object.entries(lifts ?? {})) {
     newLifts[name] = value.lift;
     if (value.ops) {
       newGrants[name] = value.ops;
     }
   }
 
-  lift(newLifts)
-    .grant(newGrants)
-    // inflight technically allows a string
-    .inflight(inflightText as any);
+  return (
+    lift(newLifts)
+      .grant(newGrants)
+      // cast as any because the inflight has already been pre-serialized
+      .inflight(inflightText as any)
+  );
 }
 
 /**

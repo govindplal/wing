@@ -20,7 +20,6 @@ use crate::comp_ctx::{CompilationContext, CompilationPhase};
 use crate::diagnostic::{report_diagnostic, Diagnostic, DiagnosticAnnotation, TypeError, WingSpan};
 use crate::docs::Docs;
 use crate::file_graph::FileGraph;
-use crate::parser::normalize_path;
 use crate::type_check::has_type_stmt::HasStatementVisitor;
 use crate::type_check::symbol_env::SymbolEnvKind;
 use crate::visit_context::{VisitContext, VisitorWithContext};
@@ -2648,13 +2647,10 @@ impl<'a> TypeChecker<'a> {
 				if let ExprKind::Reference(Reference::Identifier(ident)) = &expr.kind {
 					if ident.name == UtilityFunctions::ImportInflight.to_string().as_str() {
 						// TODO docs
-						(self.types.make_inference(), Phase::Preflight)
-					} else {
-						checked
+						return (self.types.make_inference(), Phase::Preflight);
 					}
-				} else {
-					checked
 				}
+				checked
 			}
 			CalleeKind::SuperCall(method) => resolve_super_method(method, env, &self.types).unwrap_or_else(|e| {
 				self.type_error(e);
