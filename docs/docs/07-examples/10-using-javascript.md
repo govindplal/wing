@@ -18,14 +18,14 @@ bucket.onCreate(inflight (file) => {
 });
 ```
 
-Being able to write inflight wing alongside the preflight code is beautiful, but you may want to write the inflight function in a separate file and *language*. The `@inflight` intrinsic function can be used to create an inflight closure from a JavaScript/TypeScript:
+Being able to write inflight wing alongside the preflight code is beautiful, but you may want to write the inflight function in a separate file and *language*. The special `importInflight` function can be used to create an inflight closure from a JavaScript/TypeScript:
 
 ```wing
 // main.w
 bring cloud;
 let bucket = new cloud.Bucket();
 
-bucket.onCreate(@inflight("./bucket_create.ts"));
+bucket.onCreate(importInflight("./bucket_create.ts"));
 //              ^ onCreate expects an `inflight (str): void` function, so the file must export a function with a typescript signature that matches
 //                        ^ Relative (to current file) path to javascript or typescript file
 //                          Note: This must be a static string and the file must exist at compile time
@@ -50,7 +50,7 @@ bring cloud;
 let bucket = new cloud.Bucket();
 let queue = new cloud.Queue();
 
-bucket.onCreate(@inflight("./bucket_create.ts", lifts: { 
+bucket.onCreate(importInflight("./bucket_create.ts", lifts: { 
   myQueue: { lift: queue, ops: ["push"] }
 //^ name, does not need to match the variable being lifted
 //               ^ object to lift, can be any preflight expression

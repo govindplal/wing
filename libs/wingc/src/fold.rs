@@ -315,10 +315,6 @@ where
 	F: Fold + ?Sized,
 {
 	let kind = match node.kind {
-		ExprKind::Intrinsic { name, arg_list } => ExprKind::Intrinsic {
-			name: f.fold_symbol(name),
-			arg_list: arg_list.map(|arg_list| f.fold_args(arg_list)),
-		},
 		ExprKind::New(new_expr) => ExprKind::New(f.fold_new_expr(new_expr)),
 		ExprKind::Literal(literal) => ExprKind::Literal(f.fold_literal(literal)),
 		ExprKind::Range { start, inclusive, end } => ExprKind::Range {

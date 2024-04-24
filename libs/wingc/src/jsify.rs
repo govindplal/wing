@@ -22,13 +22,13 @@ use crate::{
 	dtsify::extern_dtsify::ExternDTSifier,
 	file_graph::FileGraph,
 	files::Files,
-	parser::is_entrypoint_file,
+	parser::{is_entrypoint_file, normalize_path},
 	type_check::{
 		is_udt_struct_type,
 		lifts::{LiftQualification, Liftable, Lifts},
 		resolve_super_method, resolve_user_defined_type,
 		symbol_env::{SymbolEnv, SymbolEnvKind},
-		ClassLike, IntrinsicKind, Type, TypeRef, Types, CLASS_INFLIGHT_INIT_NAME,
+		ClassLike, Type, TypeRef, Types, CLASS_INFLIGHT_INIT_NAME,
 	},
 	visit_context::{VisitContext, VisitorWithContext},
 	MACRO_REPLACE_ARGS, MACRO_REPLACE_ARGS_TEXT, MACRO_REPLACE_SELF, WINGSDK_ASSEMBLY_NAME, WINGSDK_AUTOID_RESOURCE,
@@ -486,103 +486,6 @@ impl<'a> JSifier<'a> {
 			_ => "",
 		};
 		match &expression.kind {
-			ExprKind::Intrinsic { arg_list, .. } => {
-				let dd = self
-					.types
-					.intrinsics
-					.iter()
-					.find(|x| x.expression_id == expression.id)
-					.unwrap();
-				let IntrinsicKind::Inflight { path } = &dd.kind;
-				let mut export_name = "default";
-				let mut lift_string = new_code!(expr_span, "$stdlib.core.lift({");
-
-				let mut lifts: IndexMap<String, (&Expr, Option<&Vec<Expr>>)> = IndexMap::new();
-				if let Some(arg_list) = arg_list {
-					for x in &arg_list.named_args {
-						if x.0.name == "export" {
-							if let ExprKind::Literal(Literal::String(s)) = &x.1.kind {
-								export_name = &s[1..s.len() - 1];
-							}
-						} else if x.0.name == "lifts" {
-							if let ExprKind::JsonLiteral { element, .. } = &x.1.kind {
-								if let ExprKind::JsonMapLiteral { fields } = &element.kind {
-									for field in fields {
-										let alias = field.0.name.clone();
-										if let ExprKind::JsonLiteral { element, .. } = &field.1.kind {
-											if let ExprKind::JsonMapLiteral { fields } = &element.kind {
-												let eee = if let Some(ll) = fields.get("lift") {
-													ll
-												} else {
-													continue;
-												};
-												let ops = if let Some(ll) = fields.get("ops") {
-													if let ExprKind::ArrayLiteral { items, .. } = &ll.kind {
-														Some(items)
-													} else {
-														None
-													}
-												} else {
-													None
-												};
-												lifts.insert(alias, (eee, ops));
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				let mut dts = ExternDTSifier::new(self.types);
-				let function_type = self.types.get_expr_type(expression);
-				let function_type = self.types.maybe_unwrap_inference(function_type);
-				let shim = dts.dtsify_inflight(&function_type, &lifts);
-				let shim_path = path.with_extension("inflight.ts");
-				self
-					.output_files
-					.borrow_mut()
-					.add_file(&shim_path, shim.to_string())
-					.unwrap();
-
-				for lifted in lifts.iter() {
-					lift_string.append(format!(
-						"{}: {},",
-						lifted.0,
-						self.jsify_expression(&lifted.1 .0, ctx).to_string()
-					));
-				}
-
-				lift_string.append("})");
-
-				lift_string.append(".grant({");
-
-				for lifted in lifts.iter().filter(|x| x.1 .1.is_some()) {
-					lift_string.append(format!(
-						"{}: [{}],",
-						lifted.0,
-						lifted
-							.1
-							 .1
-							.unwrap()
-							.iter()
-							.map(|x| self.jsify_expression(x, ctx).to_string())
-							.join(",")
-					));
-				}
-
-				lift_string.append("})");
-
-				let require_path = self.get_require_path(path, expr_span);
-				if let Some(require_path) = require_path {
-					lift_string.append(format!(
-						".inflight(\"async (ctx, ...args) => require('{require_path}')['{export_name}'](ctx, ...args)\")"
-					));
-				}
-
-				return lift_string;
-			}
 			ExprKind::New(new) => {
 				let New {
 					class,
@@ -772,6 +675,115 @@ impl<'a> JSifier<'a> {
 				let is_option = function_type.is_option();
 				let function_type = function_type.maybe_unwrap_option();
 				let function_sig = function_type.as_function_sig();
+
+				if let CalleeKind::Expr(expr) = callee {
+					if let ExprKind::Reference(Reference::Identifier(ident)) = &expr.kind {
+						if ident.name == "importInflight" {
+							let path = if let ExprKind::Literal(Literal::String(ss)) = &arg_list.pos_args[0].kind {
+								// trim off the first and last character (the quotes)
+								let ss = &ss[1..ss.len() - 1];
+								let extern_path = Utf8Path::new(&ss);
+
+								let extern_path = normalize_path(extern_path, ctx.source_path);
+								if !extern_path.exists() {
+									todo!()
+									// self.spanned_error(exp, format!("Extern file '{}' does not exist", extern_path));
+								}
+								extern_path
+							} else {
+								return new_code!(&expr.span, "");
+							};
+
+							let mut export_name = "default";
+							let mut lift_string = new_code!(expr_span, "$stdlib.core.lift({");
+
+							let mut lifts: IndexMap<String, (&Expr, Option<&Vec<Expr>>)> = IndexMap::new();
+							for x in &arg_list.named_args {
+								if x.0.name == "export" {
+									if let ExprKind::Literal(Literal::String(s)) = &x.1.kind {
+										export_name = &s[1..s.len() - 1];
+									}
+								} else if x.0.name == "lifts" {
+									if let ExprKind::JsonLiteral { element, .. } = &x.1.kind {
+										if let ExprKind::JsonMapLiteral { fields } = &element.kind {
+											for field in fields {
+												let alias = field.0.name.clone();
+												if let ExprKind::JsonLiteral { element, .. } = &field.1.kind {
+													if let ExprKind::JsonMapLiteral { fields } = &element.kind {
+														let eee = if let Some(ll) = fields.get("lift") {
+															ll
+														} else {
+															continue;
+														};
+														let ops = if let Some(ll) = fields.get("ops") {
+															if let ExprKind::ArrayLiteral { items, .. } = &ll.kind {
+																Some(items)
+															} else {
+																None
+															}
+														} else {
+															None
+														};
+														lifts.insert(alias, (eee, ops));
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+
+							let mut dts = ExternDTSifier::new(self.types);
+							let function_type = self.types.get_expr_type(expression);
+							let function_type = self.types.maybe_unwrap_inference(function_type);
+							let shim = dts.dtsify_inflight(&function_type, &lifts);
+							let shim_path = path.with_extension("inflight.ts");
+							self
+								.output_files
+								.borrow_mut()
+								.add_file(&shim_path, shim.to_string())
+								.unwrap();
+
+							for lifted in lifts.iter() {
+								lift_string.append(format!(
+									"{}: {},",
+									lifted.0,
+									self.jsify_expression(&lifted.1 .0, ctx).to_string()
+								));
+							}
+
+							lift_string.append("})");
+
+							lift_string.append(".grant({");
+
+							for lifted in lifts.iter().filter(|x| x.1 .1.is_some()) {
+								lift_string.append(format!(
+									"{}: [{}],",
+									lifted.0,
+									lifted
+										.1
+										 .1
+										.unwrap()
+										.iter()
+										.map(|x| self.jsify_expression(x, ctx).to_string())
+										.join(",")
+								));
+							}
+
+							lift_string.append("})");
+
+							let require_path = self.get_require_path(&path, expr_span);
+							if let Some(require_path) = require_path {
+								lift_string.append(format!(
+									".inflight(\"async (ctx, ...args) => require('{require_path}')['{export_name}'](ctx, ...args)\")"
+								));
+							}
+
+							return lift_string;
+						}
+					}
+				}
+
 				let expr_string = match callee {
 					CalleeKind::Expr(expr) => self.jsify_expression(expr, ctx).to_string(),
 					CalleeKind::SuperCall(method) => format!("super.{}", method),

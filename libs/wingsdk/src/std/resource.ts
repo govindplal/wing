@@ -245,3 +245,21 @@ export interface OperationAnnotation {
     ops: string[];
   };
 }
+
+/**
+ * Mapping of names to values that should be lifted into inflight.
+ */
+export interface LiftDeclaration {
+  /** Hi */
+  readonly lift: any;
+  /** Hi  */
+  readonly ops?: string[];
+}
+
+/** Hi */
+export interface ImportInflightOptions {
+  /** Hi */
+  readonly export: string;
+  /** Hi */
+  readonly lifts: Record<string, LiftDeclaration>;
+}

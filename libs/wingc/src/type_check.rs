@@ -52,22 +52,6 @@ use self::jsii_importer::JsiiImportSpec;
 use self::lifts::Lifts;
 use self::symbol_env::{LookupResult, LookupResultMut, SymbolEnvIter, SymbolEnvRef};
 
-#[derive(Debug)]
-pub struct Intrinsic {
-	pub name: Symbol,
-	pub expression_id: ExprId,
-	pub statement_id: StatementIdx,
-	pub kind: IntrinsicKind,
-}
-
-#[derive(Debug)]
-pub enum IntrinsicKind {
-	Inflight {
-		path: Utf8PathBuf,
-		// lifts: IndexMap<String, (Expr, Vec<String>)>,
-	},
-}
-
 pub struct UnsafeRef<T>(*const T);
 
 impl<T> Copy for UnsafeRef<T> {}
@@ -1368,7 +1352,6 @@ pub struct Types {
 	/// Expressions used in references that actually refer to a type.
 	/// Key is the ExprId of the object of a InstanceMember, and the value is a TypeMember representing the whole reference.
 	type_expressions: IndexMap<ExprId, Reference>,
-	pub intrinsics: Vec<Intrinsic>,
 }
 
 impl Types {
@@ -1418,7 +1401,6 @@ impl Types {
 			scope_envs: Vec::new(),
 			inferences: Vec::new(),
 			type_expressions: IndexMap::new(),
-			intrinsics: Vec::new(),
 		}
 	}
 
@@ -1745,6 +1727,7 @@ pub enum UtilityFunctions {
 	UnsafeCast,
 	Nodeof,
 	Lift,
+	ImportInflight,
 }
 
 impl Display for UtilityFunctions {
@@ -1755,6 +1738,7 @@ impl Display for UtilityFunctions {
 			UtilityFunctions::UnsafeCast => write!(f, "unsafeCast"),
 			UtilityFunctions::Nodeof => write!(f, "nodeof"),
 			UtilityFunctions::Lift => write!(f, "lift"),
+			UtilityFunctions::ImportInflight => write!(f, "importInflight"),
 		}
 	}
 }
@@ -2088,6 +2072,50 @@ impl<'a> TypeChecker<'a> {
 				implicit_scope_param: false,
 			}),
 			scope,
+		);
+
+		let import_inflight_options_fqn = format!("{}.std.ImportInflightOptions", WINGSDK_ASSEMBLY_NAME);
+		let import_inflight_options = self
+			.types
+			.libraries
+			.lookup_nested_str(&import_inflight_options_fqn, None)
+			.expect("std.ImportInflightOptions not found in type system")
+			.0
+			.as_type()
+			.expect("std.ImportInflightOptions was found but it's not a type");
+		self.add_builtin(
+			&UtilityFunctions::ImportInflight.to_string(),
+			Type::Function(FunctionSignature {
+				this_type: None,
+				parameters: vec![
+					FunctionParameter {
+						name: "file".into(),
+						typeref: self.types.string(),
+						docs: Docs::with_summary("Path to extern file to create inflight. Relative to the current wing file."),
+						variadic: false,
+					},
+					FunctionParameter {
+						name: "options".into(),
+						typeref: import_inflight_options,
+						docs: Docs::with_summary(
+							"
+							TODO
+							",
+						),
+						variadic: false,
+					},
+				],
+				// In practice, this function returns an inferred type upon each use
+				return_type: self.types.anything(),
+				phase: Phase::Preflight,
+				// The emitted JS is dynamic
+				js_override: Some("throw 'TODO'".to_string()),
+				docs: Docs::with_summary(
+					"Explicitly apply qualifications to a preflight object used in the current method/function",
+				),
+				implicit_scope_param: false,
+			}),
+			scope,
 		)
 	}
 
@@ -2121,40 +2149,6 @@ impl<'a> TypeChecker<'a> {
 
 		let (mut t, phase) = |exp: &Expr, env: &mut SymbolEnv| -> (TypeRef, Phase) {
 			match &exp.kind {
-				ExprKind::Intrinsic { name, arg_list } => {
-					match name.name.as_str() {
-						"inflight" => {
-							let method_type = self.types.make_inference();
-							if let Some(arg_list) = arg_list {
-								self.type_check_arg_list(arg_list, env);
-
-								if let ExprKind::Literal(Literal::String(ss)) = &arg_list.pos_args[0].kind {
-									// trim off the first and last character (the quotes)
-									let ss = &ss[1..ss.len() - 1];
-									let extern_path = Utf8Path::new(&ss);
-
-									let extern_path = normalize_path(extern_path, Some(&self.source_path));
-									if !extern_path.exists() {
-										self.spanned_error(exp, format!("Extern file '{}' does not exist", extern_path));
-									}
-
-									self.types.intrinsics.push(Intrinsic {
-										name: name.clone(),
-										expression_id: exp.id,
-										statement_id: StatementIdx::Index(self.ctx.current_stmt_idx()),
-										kind: IntrinsicKind::Inflight { path: extern_path },
-									});
-								}
-							}
-
-							(method_type, self.ctx.current_phase())
-						}
-						_ => {
-							self.spanned_error(exp, format!("Unknown intrinsic '{}'", name));
-							(self.types.error(), Phase::Independent)
-						}
-					}
-				}
 				ExprKind::Literal(lit) => match lit {
 					Literal::String(_) => (self.types.string(), Phase::Independent),
 					Literal::Nil => (self.types.nil(), Phase::Independent),
@@ -2478,18 +2472,31 @@ impl<'a> TypeChecker<'a> {
 
 					// Resolve the function's reference (either a method in the class's env or a function in the current env)
 					let (func_type, callee_phase) = match callee {
-						CalleeKind::Expr(expr) => self.type_check_exp_ext(
-							expr,
-							env,
-							ExprVisitInfo::Callee {
-								inflight_args: arg_list_types.includes_inflights,
-							},
-						),
+						CalleeKind::Expr(expr) => {
+							let checked = self.type_check_exp_ext(
+								expr,
+								env,
+								ExprVisitInfo::Callee {
+									inflight_args: arg_list_types.includes_inflights,
+								},
+							);
+							if let ExprKind::Reference(Reference::Identifier(ident)) = &expr.kind {
+								if ident.name == UtilityFunctions::ImportInflight.to_string().as_str() {
+									// TODO
+									(self.types.make_inference(), self.ctx.current_phase())
+								} else {
+									checked
+								}
+							} else {
+								checked
+							}
+						}
 						CalleeKind::SuperCall(method) => resolve_super_method(method, env, &self.types).unwrap_or_else(|e| {
 							self.type_error(e);
 							self.resolved_error()
 						}),
 					};
+
 					let is_option = func_type.is_option();
 					let func_type = func_type.maybe_unwrap_option();
 
@@ -6662,6 +6669,26 @@ pub fn import_udt_from_jsii(
 		}
 	}
 	false
+}
+
+pub fn is_intrinsic(exp: &Expr) -> Option<(&Symbol, &ArgList)> {
+	match &exp.kind {
+		ExprKind::Call { callee, arg_list } => match callee {
+			CalleeKind::Expr(inner_exp) => {
+				if let ExprKind::Reference(Reference::Identifier(ident)) = &inner_exp.kind {
+					if ident.name == "importInflight" {
+						Some((&ident, arg_list))
+					} else {
+						None
+					}
+				} else {
+					None
+				}
+			}
+			_ => None,
+		},
+		_ => None,
+	}
 }
 
 /// *Hacky* If the given type is from the std namespace, add the implicit `std.` to it.

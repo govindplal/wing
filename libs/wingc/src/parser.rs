@@ -2015,15 +2015,6 @@ impl<'s> Parser<'s> {
 		CompilationContext::set(CompilationPhase::Parsing, &expression_span);
 		let expression_node = &self.check_error(*exp_node, "expression")?;
 		match expression_node.kind() {
-			"intrinsic" => {
-				let name = self.node_symbol(&expression_node.child_by_field_name("name").unwrap())?;
-				let arg_list = if let Some(args_node) = expression_node.child_by_field_name("args") {
-					self.build_arg_list(&args_node, phase).ok()
-				} else {
-					None
-				};
-				Ok(Expr::new(ExprKind::Intrinsic { arg_list, name }, expression_span))
-			}
 			"new_expression" => {
 				let class_udt = self.build_udt(&expression_node.child_by_field_name("class").unwrap())?;
 

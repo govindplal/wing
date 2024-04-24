@@ -8,7 +8,7 @@ import {
 } from "./types";
 import { LiftableMap, LiftedMap, PickNonFunctions } from "./utility-types";
 import { normalPath } from "../shared/misc";
-import type { IHostedLiftable } from "../std/resource";
+import type { IHostedLiftable, ImportInflightOptions } from "../std/resource";
 
 let closureCount = 0;
 
@@ -105,6 +105,27 @@ export function inflight<TFunction extends AsyncFunction>(
   fn: (ctx: {}, ...args: Parameters<TFunction>) => ReturnType<TFunction>
 ) {
   return new Lifter().inflight(fn);
+}
+
+export function importInflight(
+  inflightText: string,
+  options: ImportInflightOptions
+) {
+  const newLifts: Record<string, any> = {};
+  const newGrants: Record<string, string[]> = {};
+
+  // convert the lifts to the correct format for the Lifter
+  for (const [name, value] of Object.entries(options.lifts)) {
+    newLifts[name] = value.lift;
+    if (value.ops) {
+      newGrants[name] = value.ops;
+    }
+  }
+
+  lift(newLifts)
+    .grant(newGrants)
+    // inflight technically allows a string
+    .inflight(inflightText as any);
 }
 
 /**

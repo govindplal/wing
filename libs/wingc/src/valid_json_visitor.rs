@@ -26,9 +26,6 @@ impl<'a> ValidJsonVisitor<'a> {
 
 impl<'a> Visit<'_> for ValidJsonVisitor<'a> {
 	fn visit_expr(&mut self, expr: &Expr) {
-		if matches!(expr.kind, ExprKind::Intrinsic { .. }) {
-			return;
-		}
 		if let Some(t) = self.types.try_get_expr_type(expr.id) {
 			// if the type is json with known values, then we may need to validate that the values are legal json values
 			if let Type::Json(Some(JsonData { kind, expression_id })) = &*t {
