@@ -331,6 +331,9 @@
         },
         "function_name": "q3-SetConsumer0-c8cd013e",
         "handler": "index.handler",
+        "logging_config": {
+          "log_format": "JSON"
+        },
         "memory_size": 1024,
         "publish": true,
         "role": "${aws_iam_role.q3-SetConsumer0_IamRole_2934E47C.arn}",

@@ -424,6 +424,9 @@
         },
         "function_name": "delete-c8d8aa8e",
         "handler": "index.handler",
+        "logging_config": {
+          "log_format": "JSON"
+        },
         "memory_size": 1024,
         "publish": true,
         "role": "${aws_iam_role.BucketRef_FileBrowser_delete_IamRole_A66062FE.arn}",
@@ -456,6 +459,9 @@
         },
         "function_name": "get-c8ba1e5f",
         "handler": "index.handler",
+        "logging_config": {
+          "log_format": "JSON"
+        },
         "memory_size": 1024,
         "publish": true,
         "role": "${aws_iam_role.BucketRef_FileBrowser_get_IamRole_8E0DB684.arn}",
@@ -488,6 +494,9 @@
         },
         "function_name": "list-c88fd67a",
         "handler": "index.handler",
+        "logging_config": {
+          "log_format": "JSON"
+        },
         "memory_size": 1024,
         "publish": true,
         "role": "${aws_iam_role.BucketRef_FileBrowser_list_IamRole_DC0C9222.arn}",
@@ -520,6 +529,9 @@
         },
         "function_name": "put-c8cdb51a",
         "handler": "index.handler",
+        "logging_config": {
+          "log_format": "JSON"
+        },
         "memory_size": 1024,
         "publish": true,
         "role": "${aws_iam_role.BucketRef_FileBrowser_put_IamRole_9C4230CD.arn}",
