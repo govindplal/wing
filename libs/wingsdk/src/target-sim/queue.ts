@@ -9,6 +9,7 @@ import {
 import { Policy } from "./policy";
 import { ISimulatorResource } from "./resource";
 import { QueueSchema } from "./schema-resources";
+import { simulatorHandleToken } from "./tokens";
 import { bindSimulatorResource, makeSimulatorJsClient } from "./util";
 import * as cloud from "../cloud";
 import { NotImplementedError } from "../core/errors";
@@ -24,6 +25,7 @@ import { Duration, IInflightHost, Node, SDK_SOURCE_MODULE } from "../std";
 export class Queue extends cloud.Queue implements ISimulatorResource {
   private readonly timeout: Duration;
   private readonly retentionPeriod: Duration;
+  private readonly dlq?: cloud.DeadLetterQueueProps;
   private readonly policy: Policy;
 
   constructor(scope: Construct, id: string, props: cloud.QueueProps = {}) {
@@ -50,6 +52,18 @@ export class Queue extends cloud.Queue implements ISimulatorResource {
     }
 
     this.policy = new Policy(this, "Policy", { principal: this });
+
+    if (props.dlq && props.dlq.queue) {
+      this.dlq = props.dlq;
+
+      this.policy.addStatement(this.dlq.queue, cloud.QueueInflightMethods.PUSH);
+
+      Node.of(this).addConnection({
+        source: this,
+        target: this.dlq.queue,
+        name: "dead-letter queue",
+      });
+    }
   }
 
   /** @internal */
@@ -88,12 +102,7 @@ export class Queue extends cloud.Queue implements ISimulatorResource {
      * `cloud.Function` and overrides the `invoke` inflight method with the
      * wrapper code directly?
      */
-    const functionHandler = convertBetweenHandlers(
-      inflight,
-      join(__dirname, "queue.setconsumer.inflight.js"),
-      "QueueSetConsumerHandlerClient"
-    );
-
+    const functionHandler = QueueSetConsumerHandler.toFunctionHandler(inflight);
     const fn = new Function(
       this,
       App.of(this).makeId(this, "SetConsumer"),
@@ -136,6 +145,13 @@ export class Queue extends cloud.Queue implements ISimulatorResource {
     const props: QueueSchema = {
       timeout: this.timeout.seconds,
       retentionPeriod: this.retentionPeriod.seconds,
+      dlq: this.dlq
+        ? {
+            dlqHandler: simulatorHandleToken(this.dlq.queue),
+            maxDeliveryAttempts:
+              this.dlq.maxDeliveryAttempts ?? cloud.DEFAULT_DELIVERY_ATTEMPTS,
+          }
+        : undefined,
     };
     return {
       type: cloud.QUEUE_FQN,
@@ -151,5 +167,25 @@ export class Queue extends cloud.Queue implements ISimulatorResource {
   /** @internal */
   public _toInflight(): string {
     return makeSimulatorJsClient(__filename, this);
+  }
+}
+
+/**
+ * Utility class to work with queue set consumer handlers.
+ */
+export class QueueSetConsumerHandler {
+  /**
+   * Converts from a `cloud.IQueueSetConsumerHandler` to a `cloud.IFunctionHandler`.
+   * @param handler The handler to convert.
+   * @returns The function handler.
+   */
+  public static toFunctionHandler(
+    handler: cloud.IQueueSetConsumerHandler
+  ): cloud.IFunctionHandler {
+    return convertBetweenHandlers(
+      handler,
+      join(__dirname, "queue.setconsumer.inflight.js"),
+      "QueueSetConsumerHandlerClient"
+    );
   }
 }

@@ -74,6 +74,9 @@ exports[`Multiple platforms > only first platform app is used 1`] = `
         "batch_size": 1,
         "event_source_arn": "\${aws_sqs_queue.Queue.arn}",
         "function_name": "\${aws_lambda_function.Queue-SetConsumer0.function_name}",
+        "function_response_types": [
+          "ReportBatchItemFailures",
+        ],
       },
     },
     "aws_lambda_function": {
@@ -239,6 +242,9 @@ exports[`Platform examples > AWS target platform > permission-boundary.js 1`] = 
         "batch_size": 1,
         "event_source_arn": "\${aws_sqs_queue.Queue.arn}",
         "function_name": "\${aws_lambda_function.Queue-SetConsumer0.function_name}",
+        "function_response_types": [
+          "ReportBatchItemFailures",
+        ],
       },
     },
     "aws_lambda_function": {
@@ -473,6 +479,9 @@ exports[`Platform examples > AWS target platform > replicate-s3.js 1`] = `
         "batch_size": 1,
         "event_source_arn": "\${aws_sqs_queue.Queue.arn}",
         "function_name": "\${aws_lambda_function.Queue-SetConsumer0.function_name}",
+        "function_response_types": [
+          "ReportBatchItemFailures",
+        ],
       },
     },
     "aws_lambda_function": {
@@ -755,6 +764,9 @@ exports[`Platform examples > AWS target platform > tf-backend.js > azurerm backe
         "batch_size": 1,
         "event_source_arn": "\${aws_sqs_queue.Queue.arn}",
         "function_name": "\${aws_lambda_function.Queue-SetConsumer0.function_name}",
+        "function_response_types": [
+          "ReportBatchItemFailures",
+        ],
       },
     },
     "aws_lambda_function": {
@@ -919,6 +931,9 @@ exports[`Platform examples > AWS target platform > tf-backend.js > gcp backend 1
         "batch_size": 1,
         "event_source_arn": "\${aws_sqs_queue.Queue.arn}",
         "function_name": "\${aws_lambda_function.Queue-SetConsumer0.function_name}",
+        "function_response_types": [
+          "ReportBatchItemFailures",
+        ],
       },
     },
     "aws_lambda_function": {
@@ -1083,6 +1098,9 @@ exports[`Platform examples > AWS target platform > tf-backend.js > s3 backend 1`
         "batch_size": 1,
         "event_source_arn": "\${aws_sqs_queue.Queue.arn}",
         "function_name": "\${aws_lambda_function.Queue-SetConsumer0.function_name}",
+        "function_response_types": [
+          "ReportBatchItemFailures",
+        ],
       },
     },
     "aws_lambda_function": {
